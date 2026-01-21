@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
-
+ 
 # --- PASSWORD PROTECTION ---
 def check_password():
     """Returns True if the user has entered the correct password."""

@@ -6,7 +6,7 @@ A secure Streamlit application for monitoring student assignments from Canvas LM
 
 - **Password Protected**: Secure access control before displaying any data
 - **Multi-Student Monitoring**: Track 11 students simultaneously
-- **Flexible Timeframes**: Filter by This Week, Next Week, 3 Weeks, or All Tasks
+- **Flexible Timeframes**: Filter by This Week, Next Week, 3 Weeks, or All Tasks 
 - **Master List View**: See all tasks from all students in one table
 - **Student Breakdown**: Individual cards showing each student's assignments
 - **Real-time Sync**: Direct Canvas API integration for up-to-date information
