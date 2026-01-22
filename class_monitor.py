@@ -427,6 +427,14 @@ def get_student_grades(name, token, courses):
 
 # --- MAIN DASHBOARD UI ---
 
+# Initialize session state for data persistence
+if 'data_loaded' not in st.session_state:
+    st.session_state.data_loaded = False
+    st.session_state.grades_df = None
+    st.session_state.convos_df = None
+    st.session_state.announcements_df = None
+    st.session_state.todos_df = None
+
 if st.button("🔄 Sync Selected Students"):
     # Initialize collectors for all data types
     all_conversations = []
@@ -479,6 +487,26 @@ if st.button("🔄 Sync Selected Students"):
         announcements_df['Posted'] = pd.to_datetime(announcements_df['Posted'])
         announcements_df = announcements_df.sort_values('Posted', ascending=False)
 
+    # Store in session state
+    st.session_state.grades_df = grades_df
+    st.session_state.convos_df = convos_df
+    st.session_state.announcements_df = announcements_df
+    st.session_state.todos_df = todos_df
+    st.session_state.data_loaded = True
+
+# Retrieve data from session state
+if st.session_state.data_loaded:
+    grades_df = st.session_state.grades_df
+    convos_df = st.session_state.convos_df
+    announcements_df = st.session_state.announcements_df
+    todos_df = st.session_state.todos_df
+else:
+    grades_df = None
+    convos_df = None
+    announcements_df = None
+    todos_df = None
+
+if st.session_state.data_loaded:
     # --- GRADES ALERTS SECTION ---
     grades_count = len(grades_df) if grades_df is not None and not grades_df.empty else 0
     with st.expander(f"🚨 GRADES ALERTS ({grades_count})", expanded=(grades_count > 0)):
