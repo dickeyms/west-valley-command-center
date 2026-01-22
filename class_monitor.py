@@ -52,40 +52,42 @@ STUDENTS = [
 st.set_page_config(page_title="West Valley Command Center", layout="wide")
 st.title("⚡ West Valley Command Center")
 
-# --- DATE FILTERING LOGIC ---
-st.subheader("📅 Timeframe")
+# --- STUDENT SELECTION ---
+st.subheader("👥 Student Selection")
 col1, col2 = st.columns([1, 3])
 
 with col1:
-    # User selects the range
-    time_option = st.radio(
-        "Show tasks due by:",
-        ["End of This Week", "End of Next Week (2 Weeks)", "3 Weeks Out", "All Tasks"],
-        index=0  # Defaults to "End of This Week"
+    selection_mode = st.radio(
+        "Select students:",
+        ["All Students", "Individual Students", "Custom Group"],
+        index=0
     )
 
-# Calculate the specific cutoff date
-today = datetime.now()
-# 6 is Sunday. Calculate days remaining until Sunday.
-days_until_sunday = 6 - today.weekday()
-if days_until_sunday < 0:
-    days_until_sunday += 7
-this_coming_sunday = today + timedelta(days=days_until_sunday)
+with col2:
+    selected_students = []
+    if selection_mode == "All Students":
+        selected_students = STUDENTS
+        st.info(f"📊 Monitoring all {len(STUDENTS)} students")
+    elif selection_mode == "Individual Students":
+        selected_students = st.multiselect(
+            "Choose students to monitor:",
+            STUDENTS,
+            default=STUDENTS[:3]  # Default to first 3 students
+        )
+    else:  # Custom Group
+        # Predefined groups
+        groups = {
+            "Group A (First Half)": STUDENTS[:6],
+            "Group B (Second Half)": STUDENTS[6:],
+            "Priority Watch": ["DavidS", "Jonathan", "Alex"],  # Example priority group
+        }
+        selected_group = st.selectbox("Choose a group:", list(groups.keys()))
+        selected_students = groups[selected_group]
+        st.info(f"📊 Monitoring {len(selected_students)} students: {', '.join(selected_students)}")
 
-if "This Week" in time_option:
-    end_date = this_coming_sunday
-elif "2 Weeks" in time_option:
-    end_date = this_coming_sunday + timedelta(weeks=1)
-elif "3 Weeks" in time_option:
-    end_date = this_coming_sunday + timedelta(weeks=2)
-else:
-    end_date = None  # No filter for "All Tasks"
-
-# Display the exact date range being checked
-if end_date:
-    st.caption(f"Showing assignments due before: **{end_date.strftime('%A, %b %d')}**")
-else:
-    st.caption("Showing **everything** on the planner.")
+if not selected_students:
+    st.warning("⚠️ Please select at least one student to monitor")
+    st.stop()
 
 
 def get_student_todo(name, token, cutoff_date=None):
@@ -204,8 +206,8 @@ def strip_html(text):
     return clean.strip()
 
 
-def get_student_conversations(name, token, cutoff_date=None):
-    """Fetches unread conversations (emails) from Canvas"""
+def get_student_conversations(name, token):
+    """Fetches unread conversations (emails) from Canvas - last 3 weeks"""
     try:
         url = f"{API_URL}/api/v1/conversations"
 
@@ -215,7 +217,7 @@ def get_student_conversations(name, token, cutoff_date=None):
 
         params = {
             "scope": "unread",
-            "per_page": 50
+            "per_page": 100  # Increased to get more results
         }
 
         response = requests.get(url, headers=headers, params=params)
@@ -226,15 +228,20 @@ def get_student_conversations(name, token, cutoff_date=None):
 
         conversations = response.json()
 
+        # Filter to last 3 weeks
+        three_weeks_ago = datetime.now() - timedelta(weeks=3)
+
         messages = []
         for convo in conversations:
             last_message_at = convo.get('last_message_at')
 
-            # Apply date filtering if cutoff_date is provided
-            if cutoff_date and last_message_at:
+            # Only include messages from last 3 weeks
+            if last_message_at:
                 msg_date = pd.to_datetime(last_message_at)
-                if msg_date > cutoff_date:
+                if msg_date < three_weeks_ago:
                     continue
+            else:
+                continue  # Skip if no date
 
             subject = convo.get('subject', 'No Subject')
             last_message = convo.get('last_message', '')
@@ -243,12 +250,6 @@ def get_student_conversations(name, token, cutoff_date=None):
             preview = strip_html(last_message)
             if len(preview) > 100:
                 preview = preview[:100] + "..."
-
-            # Format date
-            formatted_date = "No Date"
-            if last_message_at:
-                dt = pd.to_datetime(last_message_at)
-                formatted_date = dt.strftime('%m-%d %H:%M')
 
             # Get sender info
             participants = convo.get('participants', [])
@@ -260,7 +261,8 @@ def get_student_conversations(name, token, cutoff_date=None):
                 "Student": name,
                 "Subject": subject,
                 "Preview": preview,
-                "Date": formatted_date,
+                "Date": last_message_at,  # Store as datetime for sorting
+                "Date_Formatted": pd.to_datetime(last_message_at).strftime('%m-%d %H:%M'),
                 "From": from_user
             })
 
@@ -271,8 +273,8 @@ def get_student_conversations(name, token, cutoff_date=None):
         return []
 
 
-def get_student_announcements(name, token, courses, cutoff_date=None):
-    """Fetches announcements from all student courses"""
+def get_student_announcements(name, token, courses):
+    """Fetches announcements from all student courses - last 3 weeks"""
     try:
         if not courses:
             return []
@@ -286,15 +288,16 @@ def get_student_announcements(name, token, courses, cutoff_date=None):
         # Build context_codes array from course IDs
         context_codes = [f"course_{course['id']}" for course in courses]
 
+        # Calculate start date (3 weeks ago) and end date (today)
+        three_weeks_ago = datetime.now() - timedelta(weeks=3)
+
         params = {
             "context_codes[]": context_codes,
             "active_only": True,
-            "per_page": 50
+            "start_date": three_weeks_ago.strftime("%Y-%m-%d"),
+            "end_date": datetime.now().strftime("%Y-%m-%d"),
+            "per_page": 100
         }
-
-        # Add date filtering if provided
-        if cutoff_date:
-            params["end_date"] = cutoff_date.strftime("%Y-%m-%d")
 
         response = requests.get(url, headers=headers, params=params)
 
@@ -310,16 +313,13 @@ def get_student_announcements(name, token, courses, cutoff_date=None):
             message = announcement.get('message', '')
             posted_at = announcement.get('posted_at')
 
+            if not posted_at:
+                continue
+
             # Strip HTML and create preview
             preview = strip_html(message)
             if len(preview) > 150:
                 preview = preview[:150] + "..."
-
-            # Format date
-            formatted_date = "No Date"
-            if posted_at:
-                dt = pd.to_datetime(posted_at)
-                formatted_date = dt.strftime('%m-%d')
 
             # Get course name from context_code
             context_code = announcement.get('context_code', '')
@@ -335,7 +335,8 @@ def get_student_announcements(name, token, courses, cutoff_date=None):
                 "Student": name,
                 "Title": title,
                 "Preview": preview,
-                "Posted": formatted_date,
+                "Posted": posted_at,  # Store as datetime for sorting
+                "Posted_Formatted": pd.to_datetime(posted_at).strftime('%m-%d'),
                 "Course": course_name
             })
 
@@ -429,7 +430,7 @@ def get_student_grades(name, token, courses):
 
 # --- MAIN DASHBOARD UI ---
 
-if st.button("🔄 Sync All Students"):
+if st.button("🔄 Sync Selected Students"):
     # Initialize collectors for all data types
     all_conversations = []
     all_todos = []
@@ -438,23 +439,23 @@ if st.button("🔄 Sync All Students"):
 
     progress_bar = st.progress(0)
 
-    for i, student_name in enumerate(STUDENTS):
+    for i, student_name in enumerate(selected_students):
         # Get token from secrets
         try:
             token = st.secrets["tokens"][student_name]
         except KeyError:
             st.warning(f"⚠️ Token not found for {student_name} in secrets")
-            progress_bar.progress((i + 1) / len(STUDENTS))
+            progress_bar.progress((i + 1) / len(selected_students))
             continue
 
         # 1. Get courses (needed for grades & announcements)
         courses = get_student_courses(student_name, token)
 
         # 2. Fetch all data types
-        student_convos = get_student_conversations(student_name, token, end_date)
-        student_todos = get_student_todo(student_name, token, end_date)
+        student_convos = get_student_conversations(student_name, token)
+        student_todos = get_student_todo(student_name, token, None)  # Will add filtering in UI
         student_grades = get_student_grades(student_name, token, courses)
-        student_announcements = get_student_announcements(student_name, token, courses, end_date)
+        student_announcements = get_student_announcements(student_name, token, courses)
 
         # 3. Collect results
         all_conversations.extend(student_convos)
@@ -462,7 +463,7 @@ if st.button("🔄 Sync All Students"):
         all_grades.extend(student_grades)
         all_announcements.extend(student_announcements)
 
-        progress_bar.progress((i + 1) / len(STUDENTS))
+        progress_bar.progress((i + 1) / len(selected_students))
 
     progress_bar.empty()
 
@@ -471,6 +472,15 @@ if st.button("🔄 Sync All Students"):
     convos_df = pd.DataFrame(all_conversations) if all_conversations else None
     announcements_df = pd.DataFrame(all_announcements) if all_announcements else None
     todos_df = pd.DataFrame(all_todos) if all_todos else None
+
+    # Sort conversations and announcements by date (newest first)
+    if convos_df is not None and not convos_df.empty:
+        convos_df['Date'] = pd.to_datetime(convos_df['Date'])
+        convos_df = convos_df.sort_values('Date', ascending=False)
+
+    if announcements_df is not None and not announcements_df.empty:
+        announcements_df['Posted'] = pd.to_datetime(announcements_df['Posted'])
+        announcements_df = announcements_df.sort_values('Posted', ascending=False)
 
     # --- GRADES ALERTS SECTION ---
     grades_count = len(grades_df) if grades_df is not None and not grades_df.empty else 0
@@ -500,23 +510,51 @@ if st.button("🔄 Sync All Students"):
     convos_count = len(convos_df) if convos_df is not None and not convos_df.empty else 0
     with st.expander(f"📧 UNREAD MESSAGES ({convos_count})", expanded=False):
         if convos_df is not None and not convos_df.empty:
-            st.subheader("📋 Master Message List")
-            st.dataframe(convos_df, use_container_width=True)
+            # Add time filter for emails
+            email_filter = st.radio(
+                "Show emails from:",
+                ["Last 3 Days", "Last Week", "Last 2 Weeks", "Last 3 Weeks (All)"],
+                index=3,
+                horizontal=True,
+                key="email_filter"
+            )
 
-            st.divider()
-            st.subheader("👤 Student Breakdown")
+            # Apply time filter
+            filtered_convos = convos_df.copy()
+            if email_filter == "Last 3 Days":
+                cutoff = datetime.now() - timedelta(days=3)
+                filtered_convos = filtered_convos[filtered_convos['Date'] >= cutoff]
+            elif email_filter == "Last Week":
+                cutoff = datetime.now() - timedelta(weeks=1)
+                filtered_convos = filtered_convos[filtered_convos['Date'] >= cutoff]
+            elif email_filter == "Last 2 Weeks":
+                cutoff = datetime.now() - timedelta(weeks=2)
+                filtered_convos = filtered_convos[filtered_convos['Date'] >= cutoff]
 
-            cols = st.columns(3)
-            unique_students = convos_df['Student'].unique()
+            if not filtered_convos.empty:
+                st.subheader("📋 Master Message List")
+                # Display with formatted date
+                display_convos = filtered_convos.copy()
+                display_convos['Date'] = display_convos['Date_Formatted']
+                st.dataframe(display_convos[['Student', 'Subject', 'Preview', 'Date', 'From']], use_container_width=True)
 
-            for i, student in enumerate(unique_students):
-                col = cols[i % 3]
-                student_data = convos_df[convos_df['Student'] == student]
+                st.divider()
+                st.subheader("👤 Student Breakdown")
 
-                with col:
-                    with st.container(border=True):
-                        st.write(f"**{student}**")
-                        st.table(student_data[['Subject', 'Preview', 'Date']])
+                cols = st.columns(3)
+                unique_students = filtered_convos['Student'].unique()
+
+                for i, student in enumerate(unique_students):
+                    col = cols[i % 3]
+                    student_data = filtered_convos[filtered_convos['Student'] == student].copy()
+                    student_data['Date'] = student_data['Date_Formatted']
+
+                    with col:
+                        with st.container(border=True):
+                            st.write(f"**{student}**")
+                            st.table(student_data[['Subject', 'Preview', 'Date']])
+            else:
+                st.info(f"📬 No unread messages in the selected timeframe.")
         else:
             st.info("📬 All caught up! No unread messages.")
 
@@ -524,23 +562,51 @@ if st.button("🔄 Sync All Students"):
     announcements_count = len(announcements_df) if announcements_df is not None and not announcements_df.empty else 0
     with st.expander(f"📢 ANNOUNCEMENTS ({announcements_count})", expanded=False):
         if announcements_df is not None and not announcements_df.empty:
-            st.subheader("📋 Master Announcements List")
-            st.dataframe(announcements_df, use_container_width=True)
+            # Add time filter for announcements
+            announcement_filter = st.radio(
+                "Show announcements from:",
+                ["Last 3 Days", "Last Week", "Last 2 Weeks", "Last 3 Weeks (All)"],
+                index=3,
+                horizontal=True,
+                key="announcement_filter"
+            )
 
-            st.divider()
-            st.subheader("👤 Student Breakdown")
+            # Apply time filter
+            filtered_announcements = announcements_df.copy()
+            if announcement_filter == "Last 3 Days":
+                cutoff = datetime.now() - timedelta(days=3)
+                filtered_announcements = filtered_announcements[filtered_announcements['Posted'] >= cutoff]
+            elif announcement_filter == "Last Week":
+                cutoff = datetime.now() - timedelta(weeks=1)
+                filtered_announcements = filtered_announcements[filtered_announcements['Posted'] >= cutoff]
+            elif announcement_filter == "Last 2 Weeks":
+                cutoff = datetime.now() - timedelta(weeks=2)
+                filtered_announcements = filtered_announcements[filtered_announcements['Posted'] >= cutoff]
 
-            cols = st.columns(3)
-            unique_students = announcements_df['Student'].unique()
+            if not filtered_announcements.empty:
+                st.subheader("📋 Master Announcements List")
+                # Display with formatted date
+                display_announcements = filtered_announcements.copy()
+                display_announcements['Posted'] = display_announcements['Posted_Formatted']
+                st.dataframe(display_announcements[['Student', 'Title', 'Preview', 'Posted', 'Course']], use_container_width=True)
 
-            for i, student in enumerate(unique_students):
-                col = cols[i % 3]
-                student_data = announcements_df[announcements_df['Student'] == student]
+                st.divider()
+                st.subheader("👤 Student Breakdown")
 
-                with col:
-                    with st.container(border=True):
-                        st.write(f"**{student}**")
-                        st.table(student_data[['Title', 'Preview', 'Posted']])
+                cols = st.columns(3)
+                unique_students = filtered_announcements['Student'].unique()
+
+                for i, student in enumerate(unique_students):
+                    col = cols[i % 3]
+                    student_data = filtered_announcements[filtered_announcements['Student'] == student].copy()
+                    student_data['Posted'] = student_data['Posted_Formatted']
+
+                    with col:
+                        with st.container(border=True):
+                            st.write(f"**{student}**")
+                            st.table(student_data[['Title', 'Preview', 'Posted']])
+            else:
+                st.info(f"📢 No announcements in the selected timeframe.")
         else:
             st.info("📢 No announcements in this timeframe.")
 
@@ -548,31 +614,77 @@ if st.button("🔄 Sync All Students"):
     todos_count = len(todos_df) if todos_df is not None and not todos_df.empty else 0
     with st.expander(f"✅ ASSIGNMENTS ({todos_count})", expanded=True):
         if todos_df is not None and not todos_df.empty:
-            st.subheader("📋 Master List")
-            st.dataframe(
-                todos_df,
-                use_container_width=True,
-                column_config={
-                    "Status": st.column_config.TextColumn(
-                        "Status",
-                        validate="^Submitted"
-                    )
-                }
+            # Add time filter for assignments
+            assignment_filter = st.radio(
+                "Show assignments due:",
+                ["This Week", "Next Week", "Next 2 Weeks", "Next 3 Weeks", "All Upcoming"],
+                index=2,
+                horizontal=True,
+                key="assignment_filter"
             )
 
-            st.divider()
-            st.subheader("👤 Student Breakdown")
+            # Calculate cutoff date based on filter
+            today = datetime.now()
+            days_until_sunday = 6 - today.weekday()
+            if days_until_sunday < 0:
+                days_until_sunday += 7
+            this_sunday = today + timedelta(days=days_until_sunday)
 
-            cols = st.columns(3)
-            unique_students = todos_df['Student'].unique()
+            if assignment_filter == "This Week":
+                cutoff_date = this_sunday
+            elif assignment_filter == "Next Week":
+                cutoff_date = this_sunday + timedelta(weeks=1)
+            elif assignment_filter == "Next 2 Weeks":
+                cutoff_date = this_sunday + timedelta(weeks=2)
+            elif assignment_filter == "Next 3 Weeks":
+                cutoff_date = this_sunday + timedelta(weeks=3)
+            else:
+                cutoff_date = None
 
-            for i, student in enumerate(unique_students):
-                col = cols[i % 3]
-                student_work = todos_df[todos_df['Student'] == student]
+            # Apply filter to assignments
+            filtered_todos = todos_df.copy()
+            if cutoff_date:
+                # Parse Due dates and filter
+                filtered_todos['Due_Parsed'] = pd.to_datetime(filtered_todos['Due'], format='%m-%d %H:%M', errors='coerce')
+                # Add current year for comparison
+                current_year = datetime.now().year
+                filtered_todos['Due_Parsed'] = filtered_todos['Due_Parsed'].apply(
+                    lambda x: x.replace(year=current_year) if pd.notna(x) else x
+                )
+                filtered_todos = filtered_todos[
+                    (filtered_todos['Due_Parsed'].isna()) |
+                    (filtered_todos['Due_Parsed'] <= cutoff_date)
+                ]
 
-                with col:
-                    with st.container(border=True):
-                        st.write(f"**{student}**")
-                        st.table(student_work[['Task', 'Status', 'Due']])
+            if not filtered_todos.empty:
+                st.caption(f"Showing {len(filtered_todos)} assignment(s)")
+                st.subheader("📋 Master List")
+                st.dataframe(
+                    filtered_todos[['Student', 'Task', 'Due', 'Status']],
+                    use_container_width=True,
+                    column_config={
+                        "Status": st.column_config.TextColumn(
+                            "Status",
+                            validate="^Submitted"
+                        )
+                    }
+                )
+
+                st.divider()
+                st.subheader("👤 Student Breakdown")
+
+                cols = st.columns(3)
+                unique_students = filtered_todos['Student'].unique()
+
+                for i, student in enumerate(unique_students):
+                    col = cols[i % 3]
+                    student_work = filtered_todos[filtered_todos['Student'] == student]
+
+                    with col:
+                        with st.container(border=True):
+                            st.write(f"**{student}**")
+                            st.table(student_work[['Task', 'Status', 'Due']])
+            else:
+                st.success("🎉 No assignments found for this time period!")
         else:
-            st.success("🎉 No active assignments found for this time period!")
+            st.success("🎉 No active assignments found!")
