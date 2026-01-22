@@ -51,13 +51,28 @@ STUDENTS = [
 # --- MAIN APPLICATION ---
 st.set_page_config(page_title="Camden-West Valley Canvas Monitoring Tool", layout="wide")
 
+# Custom CSS for Newsreader font
+st.markdown("""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+    .title-text {
+        font-family: 'Newsreader', serif;
+        font-size: 3rem;
+        font-weight: 600;
+        line-height: 1.2;
+        margin-top: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Custom title with logo
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
     st.image("https://www.westvalley.edu/community-grant/_files/community-grant.jpg", width=120)
 with col_title:
-    st.markdown("# Camden-West Valley")
-    st.markdown("# Canvas Monitoring Tool")
+    st.markdown('<div class="title-text">Camden-West Valley Canvas Monitoring Tool</div>', unsafe_allow_html=True)
 
 # --- STUDENT SELECTION ---
 st.subheader("👥 Student Selection")
