@@ -49,8 +49,15 @@ STUDENTS = [
 ]
 
 # --- MAIN APPLICATION ---
-st.set_page_config(page_title="West Valley Command Center", layout="wide")
-st.title("⚡ West Valley Command Center")
+st.set_page_config(page_title="Camden-West Valley Canvas Monitoring Tool", layout="wide")
+
+# Custom title with logo
+col_logo, col_title = st.columns([1, 5])
+with col_logo:
+    st.image("https://www.westvalley.edu/community-grant/_files/community-grant.jpg", width=120)
+with col_title:
+    st.markdown("# Camden-West Valley")
+    st.markdown("# Canvas Monitoring Tool")
 
 # --- STUDENT SELECTION ---
 st.subheader("👥 Student Selection")
@@ -59,7 +66,7 @@ col1, col2 = st.columns([1, 3])
 with col1:
     selection_mode = st.radio(
         "Select students:",
-        ["All Students", "Individual Students", "Custom Group"],
+        ["All Students", "Individual Students"],
         index=0
     )
 
@@ -74,16 +81,6 @@ with col2:
             STUDENTS,
             default=STUDENTS[:3]  # Default to first 3 students
         )
-    else:  # Custom Group
-        # Predefined groups
-        groups = {
-            "Group A (First Half)": STUDENTS[:6],
-            "Group B (Second Half)": STUDENTS[6:],
-            "Priority Watch": ["DavidS", "Jonathan", "Alex"],  # Example priority group
-        }
-        selected_group = st.selectbox("Choose a group:", list(groups.keys()))
-        selected_students = groups[selected_group]
-        st.info(f"📊 Monitoring {len(selected_students)} students: {', '.join(selected_students)}")
 
 if not selected_students:
     st.warning("⚠️ Please select at least one student to monitor")
